@@ -1,13 +1,16 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException, status
 from tortoise.contrib.fastapi import register_tortoise
 from models import *
-from authentication import get_hashed_password
+from send_email import *
+from authentication import get_hashed_password, verify_token
 
 # signals
 from tortoise.signals import post_save
 from typing import List, Optional, Type
 from tortoise import BaseDBAsyncClient
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
 
@@ -34,11 +37,37 @@ async def create_business(
         )
         await business_pydqantic.from_tortoise_orm(business_obj)
         # send the email
+        await send_email([instance.email], instance)
 
 
 @app.get("/")
 async def index():
     return {"Hello world"}
+
+
+templates = Jinja2Templates(directory="templates")
+
+
+@app.get("/verification/", response_class=HTMLResponse)
+async def email_verification(request: Request, token: str):
+    user = await verify_token(token)
+
+    if user and not user.is_verified:
+        user.is_verified = True
+        await user.save()
+        return templates.TemplateResponse(
+            "verification.html",
+            {
+                "request": request,
+                "username": user.username
+            }
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid Token Or Expired Token",
+        headers={"WWW.Authenticate": "Bearer"}
+    )
 
 
 @app.post("/registration")
@@ -48,10 +77,8 @@ async def user_regestration(user: user_pydanticIn):
     user_obj = await User.create(**user_info)
     new_user = await user_pydentic.from_tortoise_orm(user_obj)
 
-    return {"status": "ok",
-            "data": f"hello{new_user.username} thnx for choosing services please check your email inbox and click on"
-                    f" the link to confirm your registraion."
-            }
+    return {"status": "ok", "data": f"hello {new_user.username} thnx for choosing services please check your email inbox and click on"
+                    f" the link to confirm your registraion."}
 
 
 if __name__ == "__main__":
