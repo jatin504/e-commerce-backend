@@ -62,3 +62,5 @@ async def send_email(email: EmailSchema, instance: User):
 
     fm = FastMail(conf)
     await fm.send_message(message=message)
+
+# send email
